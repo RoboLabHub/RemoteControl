@@ -8,10 +8,10 @@ void init_lcd()
   lcd.init();
   // Print a message to the LCD.
   lcd.backlight();
-  lcd.setCursor(6,1);
+  lcd.setCursor(6, 1);
   lcd.print("Welcome!");
-  lcd.setCursor(5,3);
-  lcd.print("RoboDog RC");
+  lcd.setCursor(3, 3);
+  lcd.print("Remote Control");
 }
 
 void start_lcd()

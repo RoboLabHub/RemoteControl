@@ -1,107 +1,68 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
 
+const int pinSpeaker = 11;
+const int kBTCount = 3;
+
 #include "Buttons.h"
 #include "Joystick.h"
+#include "Utils.h"
 #include "Lcd.h"
+#include "Commands.h"
 
-bool g_offline = true;
-
-byte GetCheckSum(byte* buff, int len)
-{
-  byte checkSum = 0;
-  for (int i = 0; i < len; ++i) checkSum += buff[i];
-  return checkSum;
+struct {
+  char* name;
+  char* addr;
 }
+g_BT[kBTCount] = {
+  { "Develop", "98d3:31:fc10fa" },
+};
 
-void Beep(int hz = 1000, int period = 100)
-{
-  tone(11, hz, period);
-  delay(period);
-}
-
-void CheckForTelemetry()
-{
-  bool found = false;
-  while (Serial.available()) {
-    if (Serial.read() == '*') {
-      found = true;
-      break;
-    }
-  }
-  if (!found) return;
-
-  const byte kDataSize = 3;
-
-  if (!Serial.available()) return; // Error
-  byte len = Serial.read();
-  if (len != kDataSize) return;
-
-  if (!Serial.available()) return; // Error
-  byte checkSum = Serial.read();
-
-  byte data[kDataSize];
-  for (int i = 0; i < sizeof(data); ++i) {
-    if (!Serial.available()) return; // Error
-    data[i] = Serial.read();
-  }
-
-  if (GetCheckSum(data, sizeof(data)) != checkSum) return;
-
-  if (g_offline) {
-    lcd.clear();
-    g_offline = false;
-  }
-  
-  char str[32];
-  sprintf(str, "%dC %d.%dV", (int)(data[0]), (int)(data[1]/10), (int)(data[1]%10));
-  lcd.setCursor(0, 0); lcd.print(str);
-
-  switch (data[2]) // Beep type
-  {
-  case 0: 
-    Beep(1000, 30); 
-    break;
-  case 1: 
-    tone(11, 400, 1000);
-    break;
-  }
-
-  // Flush input buffer
-  while (Serial.available()) Serial.read();
-}
+bool g_changeBT = false;
+int  g_currBT = 0;
 
 void SendData(byte* data, int len)
 {
-  byte header[] = { '*', 'A', 'A', 'E', 'E' };
-  Serial.write(header, sizeof(header));
+  Serial.write((byte)'*');
   Serial.write((byte)len);
   Serial.write((byte)GetCheckSum(data, len));
   Serial.write(data, len);
 }
 
-void BeepTrigger(bool isOn)
-{
-  if (isOn) {
-    Beep(500, 100); Beep(1000, 100);
-  }
-  else {
-    Beep(1000, 100); Beep(500, 100);
-  }
-}
-
 void setup()
 {
-  Serial.begin(115200);
-
   init_lcd();
   init_buttons();
 
-  Beep( 500, 150);
-  Beep(1000, 200);
-  Beep( 300, 250);
+  Beep( 300, 100);
+  Beep( 600, 100);
+  Beep(1000, 150);
 
   start_lcd();
+
+  cycle_buttons();
+  if (btnR3.On()) {
+    digitalWrite(12, HIGH); // Set AT mode for bluetooth adapter
+
+    lcd.clear();
+    lcd.setCursor( 0, 2); lcd.print("Change BT receiver");
+
+    g_changeBT = true;
+    Serial.begin(38400);
+
+    // Wait while button is pressed
+    while (btnR3.On()) {
+      cycle_buttons();
+      delay(100);
+    }
+    btnR3.Reset();
+
+    lcd.setCursor(10, 0); lcd.print("> Select <"); 
+  }
+  else {
+    Serial.begin(115200);
+    Serial.setTimeout(20);
+  }
 }
 
 struct DATA_PACKET_1
@@ -116,10 +77,13 @@ struct DATA_PACKET_1
   uint8_t buttons;
 };
 
-void SendData1()
+void cycleSendData()
 {
-  static unsigned long s_nextSend = millis();
-  if (millis() < s_nextSend) return;
+  static unsigned long s_lastSend = millis();
+  if (millis() - s_lastSend < 125) return; // 10Hz
+
+  cycle_buttons();
+  cycle_joystick();
   
   DATA_PACKET_1 data;
 
@@ -142,19 +106,51 @@ void SendData1()
   data.buttons = bt;
 
   SendData((byte*)&data, sizeof(data));
-
-  s_nextSend = millis() + 100; // 10Hz
+  s_lastSend = millis();
 }
 
-bool g_trigger1 = false;
-bool g_trigger2 = false;
+void loopChangeBT()
+{
+  cycle_buttons();
+  
+  if (btnR3.Clicked()) {
+    if (++g_currBT >= kBTCount) g_currBT = 0;
+
+    lcd.clear();
+    lcd.setCursor(12, 0); lcd.print(g_BT[g_currBT].name);
+  }
+
+  if (btnR3.Changed()) {
+    lcd.clear();
+    lcd.setCursor(0, 0); lcd.print("Re-binding...");
+        
+    Serial.println("AT+RMAAD");
+    lcd.setCursor(0, 1); lcd.print(Serial.readStringUntil('\n'));
+    
+    Serial.print("AT+BIND=");
+    Serial.println(g_BT[g_currBT].addr);
+    lcd.setCursor(0, 2); lcd.print(Serial.readStringUntil('\n'));
+
+    Serial.println("AT+RESET");
+    lcd.setCursor(0, 3); lcd.print(Serial.readStringUntil('\n'));
+
+    delay(1000);
+    Serial.begin(115200);
+    Serial.setTimeout(20);
+    lcd.clear();
+    g_changeBT = false;
+  }  
+}
 
 void loop()
 {
-  cycle_buttons();
-  cycle_joystick();
+  if (g_changeBT) {
+    loopChangeBT();
+  }
+  else {
+    cycleCommands();
+    cycleSendData();
+  }
 
-  CheckForTelemetry();
-
-  SendData1();
+  delay(10);
 }

@@ -1,8 +1,11 @@
+const unsigned long kDoubleClickPeriod = 1000; // in msec
+
 class Button
 {
 public:
-  Button(int pin) : m_pin(pin), m_on(false)
+  Button(int pin) : m_pin(pin)
   {
+    Reset();
   }
 
   void Init()
@@ -11,16 +14,65 @@ public:
     digitalWrite(m_pin, HIGH); // Set internal pullup resistor
   }
 
+  void Reset()
+  {
+    m_clickedTime = 0;
+    m_on = m_clicked = m_doubleClicked = m_changed = m_prevState = false;
+  }
+  
   void Cycle()
   {
     m_on = (digitalRead(m_pin) == 0) ? true : false;
+
+    if (m_on != m_prevState) {
+      if (true == m_on) {
+        m_clicked = m_changed = true;
+        if (millis() - m_clickedTime < kDoubleClickPeriod) m_doubleClicked = true;
+        
+        m_clickedTime = millis();
+      }
+
+      m_prevState = m_on;
+    }    
   }
 
   bool On() { return m_on; }
 
+  bool Clicked()
+  {
+    bool ret = m_clicked;
+    m_clicked = m_doubleClicked = false;
+    return ret;
+  }
+
+  bool DoubleClicked()
+  {
+    bool ret = m_doubleClicked;
+    m_clicked = m_doubleClicked = false;
+    return ret;
+  }
+
+  bool Changed()
+  {
+    if (m_changed) {
+      // Return changed status only after 2 sec after last click
+      if (millis() - m_clickedTime > 2000) {
+        m_changed = false;
+        return true;
+      }
+    }
+    return false;
+  }
+
 private:
   int m_pin;
   bool m_on;
+  bool m_prevState;
+  bool m_clicked;
+  bool m_changed;
+  bool m_doubleClicked;
+
+  unsigned long m_clickedTime;
 };
 
 ////////////////////////////
