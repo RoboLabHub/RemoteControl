@@ -16,6 +16,7 @@ struct {
 }
 g_BT[kBTCount] = {
   { "Develop", "98d3:31:fc10fa" },
+  { "Dog V2",  "0021:12:084A30" }, // Put your robodog BT address here
 };
 
 bool g_changeBT = false;
@@ -107,6 +108,20 @@ void cycleSendData()
 
   SendData((byte*)&data, sizeof(data));
   s_lastSend = millis();
+
+  char str[32];
+  sprintf(str, "%4d%4d %4d%4d", (int)data.x1, (int)data.y1, (int)data.x2, (int)data.y2);
+  lcd.setCursor(1, 3); lcd.print(str);  
+
+  lcd.setCursor(0, 0); lcd.print(btnL3.On()   ? "X" : "-");
+  lcd.setCursor(0, 1); lcd.print(btnL2.On()   ? "X" : "-");
+  lcd.setCursor(0, 2); lcd.print(btnL1.On()   ? "X" : "-");
+  lcd.setCursor(0, 3); lcd.print(btnLeft.On() ? "X" : "-");
+
+  lcd.setCursor(19, 0); lcd.print(btnR3.On()    ? "X" : "-");
+  lcd.setCursor(19, 1); lcd.print(btnR2.On()    ? "X" : "-");
+  lcd.setCursor(19, 2); lcd.print(btnR1.On()    ? "X" : "-");
+  lcd.setCursor(19, 3); lcd.print(btnRight.On() ? "X" : "-");
 }
 
 void loopChangeBT()
